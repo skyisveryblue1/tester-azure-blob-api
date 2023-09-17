@@ -10,7 +10,9 @@ using System.Text;
 using System.Web;
 
 
-GetBlob();
+PutBlobWithPath();
+
+PutBlob();
 
 string GetCanonicalizedResource(Uri address, string storageAccountName)
 {
@@ -31,12 +33,12 @@ string GetCanonicalizedResource(Uri address, string storageAccountName)
 }
 
 string GetAuthorizationHeader(string method, string storageAccountName, string storageAccountKey, 
-    string canonicalizedHeaders, string canonicalResources, int contentLength = 0, string ifMatch = "", string md5 = "")
+    string canonicalizedHeaders, string canonicalResources, long contentLength = 0, string ifMatch = "", string md5 = "")
 {
     // This is the raw representation of the message signature.
     String MessageSignature = String.Format("{0}\n\n\n{1}\n{5}\n\n\n\n{2}\n\n\n\n{3}{4}",
                 method,
-                (method == "GET" || method == "HEAD" || method == "PUT") ? String.Empty : contentLength.ToString(),
+                (method == "GET" || method == "HEAD" || (method == "PUT" && contentLength == 0)) ? String.Empty : contentLength.ToString(),
                 ifMatch,
                 canonicalizedHeaders,
                 canonicalResources,
@@ -55,7 +57,66 @@ string GetAuthorizationHeader(string method, string storageAccountName, string s
     return $"SharedKey {storageAccountName}:{signature}";
 }
 
-void GetBlob()
+void PutBlobWithPath()
+{
+    string storageAccountName = "devstoreaccount1"; // Azurite storage account name
+    string storageAccountKey = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="; // Azurite storage account key
+
+    string blobName = "Temp/abc/0AE0AFD11835_AD35230425254881000106590009452543208108318760.xml";
+    string filePath = "C:\\teste\\0AE0AFD11835_AD35230425254881000106590009452543208108318760.xml";
+
+    // Construct the URI. It will look like this:
+    //  https://{accountName}.blob.core.windows.net/{containerName}/{blobName};
+    string uri = $"http://127.0.0.1:10000/{storageAccountName}/landing/{blobName}";
+    string method = "PUT";
+
+    string dateTime = "Mon, 04 Sep 2023 23:09:19 GMT"; // DateTime.UtcNow.ToString("R", CultureInfo.InvariantCulture);
+    string version = "2019-02-02";
+
+    byte[] fileBytes = File.ReadAllBytes(filePath);
+    long contentLength = fileBytes.LongLength;
+    MD5 md5 = MD5.Create();
+    byte[] md5Hash = md5.ComputeHash(fileBytes);
+    string contentMD5 = Convert.ToBase64String(md5Hash);
+
+    // Construct the canonicalized headers string
+    string canonicalizedHeaders = $"x-ms-blob-content-md5:{contentMD5}\nx-ms-blob-type:BlockBlob\nx-ms-date:{dateTime}\nx-ms-version:{version}\n";
+
+    // Construct the canonicalized resource string
+    string canonicalizedResource = GetCanonicalizedResource(new Uri(uri), storageAccountName);
+
+    // Construct the authentication header
+    string authorizationHeader = GetAuthorizationHeader(method, storageAccountName, storageAccountKey,
+        canonicalizedHeaders, canonicalizedResource, contentLength);
+
+    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(uri);
+    request.Method = method;
+    request.ContentLength = contentLength;
+    request.Headers["x-ms-blob-type"] = "BlockBlob";
+    request.Headers["x-ms-blob-content-md5"] = contentMD5;
+    request.Headers["x-ms-version"] = version;
+    request.Headers["x-ms-date"] = dateTime;
+    request.Headers["Authorization"] = authorizationHeader;
+
+    try
+    {
+        using (Stream requestStream = request.GetRequestStream())
+        {
+            requestStream.Write(fileBytes, 0, fileBytes.Length);
+        }
+
+        using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+        {
+            Console.WriteLine($"Status: {response.StatusCode} {response.StatusDescription}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine(ex.ToString());
+    }
+}
+
+void CreateContainer()
 {
     string storageAccountName = "devstoreaccount1"; // Azurite storage account name
     string storageAccountKey = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="; // Azurite storage account key
